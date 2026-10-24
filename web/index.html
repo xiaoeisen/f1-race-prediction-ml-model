@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>F1 Race Prediction</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261024-text-color-grid">
+</head>
+<body class="view-live">
+
+<div class="hero-stage"><section class="hero wrap" aria-labelledby="hero-title">
+  <h1 class="hero-title" id="hero-title">See the race<br>before it <em>unfolds</em></h1>
+  <p class="hero-copy">A sharper view of the grid. F1 finishing-order predictions shaped by qualifying, practice pace, weather, and driver form.</p>
+  <p class="hero-caption">QUALIFYING <b>&middot;</b> PRACTICE PACE <b>&middot;</b> DRIVER FORM <b>&middot;</b> 20,000 SIMULATIONS</p>
+  <aside class="hero-badge"><strong>&#10022;</strong><span><b>Built for race day</b><small>FastF1 data &middot; model-driven picks</small></span></aside>
+</section></div><main class="wrap" id="live">
+    <section class="panel" aria-live="polite">
+      <div class="live-head">
+        <div>
+          <h2 id="live-title" class="scroll-wipe">Loading...</h2>
+          <p class="hint" id="live-sub"></p>
+        </div>
+        <label class="racepick">Race
+          <select id="live-race" aria-label="Choose Grand Prix"><option value="">Loading race calendar...</option></select>
+        </label>
+      </div>
+      <div id="live-sessions" class="chips"></div>
+      <div id="live-msg" class="hint"></div>
+    </section>
+
+    <section class="panel" id="live-compare-panel" hidden>
+      <h2>Predicted top 5 <span id="vs-actual" hidden>vs the real result</span></h2>
+      <div class="scroll"><table id="live-table"><thead></thead><tbody></tbody></table></div>
+      <div id="live-badges" class="badges"></div>
+      <p class="hint">Predictions are stored before the race and locked when it starts. &#10003; right position &middot; &#9675; in the top 5 but wrong position &middot; &#10007; not in the top 5.</p>
+    </section>
+
+    <section class="panel" id="season-panel" hidden>
+      <h2>Accuracy indicator</h2>
+      <div id="season-cards" class="cards"></div>
+      <div id="season-bars"></div>
+      <p class="hint">Top-5 accuracy = how many of the real top 5 the model named. Score (0-100) = 50% top-5 overlap + 30% exact positions + 20% winner. Compared with the simple guess &ldquo;drivers finish where they started&rdquo;.</p>
+    </section>
+
+    <section class="panel" id="auto-panel">
+      <h2>Self-updating and self-training</h2>
+      <div id="auto-body"></div>
+    </section>
+  </main>
+
+  <section class="wrap driver-section" id="drivers" aria-labelledby="drivers-title">
+    <div class="section-kicker">2026 GRID</div>
+    <h2 id="drivers-title">Meet the drivers</h2>
+    <p class="hint driver-intro">Driver details for the current grid.</p>
+    <div class="driver-grid" id="driver-grid"></div>
+  </section>
+  <section class="wrap explore-section" id="explore">
+    <div class="section-kicker">PREDICTIONS</div>
+    <h2 class="explore-title scroll-wipe" data-wipe="Explore predictions">Explore predictions</h2>
+    <section class="panel controls" aria-label="Choose a race">
+      <label>Season
+        <select id="season"></select>
+      </label>
+      <label>Race
+        <select id="race"></select>
+      </label>
+      <label>Weather
+        <select id="weather">
+          <option value="auto">Actual conditions</option>
+          <option value="dry">What if: dry</option>
+          <option value="rain">What if: rain</option>
+        </select>
+      </label>
+      <div class="btns">
+        <button id="predict" class="primary" type="button">Predict</button>
+        <button id="reset" class="ghost" type="button" hidden>Reset what-if</button>
+      </div>
+    </section>
+
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="notes"></div>
+
+    <section id="summary" class="cards" hidden></section>
+
+    <section id="results" class="panel" hidden>
+      <div class="head">
+        <h2>Prediction vs actual race result</h2>
+        <p class="hint">Choose a completed race to compare the model's predicted finishing order with the official result. The green or red arrow shows how many places each driver finished ahead of or behind the prediction.</p>
+        <h3 id="evt"></h3>
+        <p class="hint">Try a what-if: change the race-day weather, then press Predict.</p>
+      </div>
+      <div class="scroll">
+        <table id="table">
+          <thead>
+            <tr>
+              <th>Predicted pos.</th><th>Driver</th><th>Team</th><th>Grid</th>
+              <th title="Qualifying position and gap to pole">Quali</th>
+              <th title="FP1 position and gap to the fastest lap">FP1</th>
+              <th title="FP2 position and gap to the fastest lap">FP2</th>
+              <th>Avg. pos.</th>
+              <th>Win</th><th>Podium</th><th>Top 10</th><th class="actual-col" title="Actual finishing position; arrow shows places gained or lost against the prediction">Actual finish</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint">Percentages come from 20,000 simulated races. They are estimates, not guarantees.</p>
+    </section>
+
+    <section class="panel" id="session-standings-panel" hidden>
+      <div class="head">
+        <h2>Weekend session standings</h2>
+        <p class="hint" id="session-standings-note">Session order is sorted fastest to slowest. The starting grid uses official grid data when available and qualifying as a fallback.</p>
+      </div>
+      <div id="session-tabs" class="session-tabs" role="tablist" aria-label="Grand Prix sessions"></div>
+      <div id="session-standing-table" class="scroll" role="tabpanel"></div>
+    </section>
+    <section class="panel" id="standings-panel" hidden>
+      <div class="head">
+        <h2>Championship standings</h2>
+        <p class="hint" id="standings-through"></p>
+      </div>
+      <div class="standings-grid">
+        <section aria-labelledby="driver-standings-title">
+          <h3 id="driver-standings-title">Driver standings</h3>
+          <div class="scroll" id="driver-standings"></div>
+        </section>
+        <section aria-labelledby="team-standings-title">
+          <h3 id="team-standings-title">Team standings</h3>
+          <div class="scroll" id="team-standings"></div>
+        </section>
+      </div>
+    </section>
+    <section class="panel" id="model-panel">
+      <h2>How good is the model?</h2>
+      <div id="model"></div>
+    </section>
+  </main>
+
+  <footer class="wrap">Built with FastF1 data and LightGBM. Predictions are for fun and learning, not betting advice.</footer>
+  <script src="/static/drivers.js?v=20261024-inline-country-flags"></script>
+  <script src="/static/app.js?v=20261024-outlined-hero"></script>
+</body>
+</html>
+
+
+
+

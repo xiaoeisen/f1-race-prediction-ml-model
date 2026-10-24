@@ -1,0 +1,9 @@
+fastf1>=3.4
+pandas
+numpy
+scipy
+scikit-learn
+lightgbm
+joblib
+fastapi
+uvicorn
