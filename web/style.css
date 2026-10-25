@@ -1,4 +1,4 @@
-﻿@font-face {
+@font-face {
   font-family: "Bebas Neue";
   src: url("/static/fonts/BebasNeue-Regular.otf") format("opentype");
   font-style: normal;
@@ -160,7 +160,7 @@ body:before{background:linear-gradient(119deg,transparent 36%,rgba(255,47,58,.03
 body:after{background:radial-gradient(ellipse at 60% 24%,rgba(255,95,59,.22),transparent 43%),linear-gradient(113deg,transparent 46%,rgba(255,70,55,.26) 51%,rgba(255,179,71,.13) 55%,transparent 64%);animation:aurora-breathe 21s ease-in-out -4s infinite}
 @keyframes aurora-drift{0%{opacity:1;transform:translate(0,0) rotate(-12deg) scale(1)}50%{opacity:.58;transform:translate(2%,2%) rotate(-9deg) scale(1.04)}100%{opacity:1;transform:translate(-1%,1%) rotate(-13deg) scale(.99)}}
 @keyframes aurora-breathe{0%{opacity:.9;transform:translate(0,0) rotate(-18deg) scale(1)}50%{opacity:.48;transform:translate(-2%,-1%) rotate(-14deg) scale(1.08)}100%{opacity:.9;transform:translate(0,0) rotate(-18deg) scale(1)}}
-.top{position:relative;z-index:2;margin:0;padding:22px 0 0;border:0;background:transparent}.top .wrap{display:flex;justify-content:center}.top .wrap:before{content:"â—†  F1 RACE LAB";color:#f3f2f1;font-size:12px;font-weight:650;letter-spacing:.12em}.top h1,.top p{display:none}
+.top{position:relative;z-index:2;margin:0;padding:22px 0 0;border:0;background:transparent}.top .wrap{display:flex;justify-content:center}.top .wrap:before{content:"◆  F1 RACE LAB";color:#f3f2f1;font-size:12px;font-weight:650;letter-spacing:.12em}.top h1,.top p{display:none}
 .tabs{position:relative;z-index:3;width:max-content;max-width:calc(100% - 32px);justify-content:center;margin:12px auto 0;padding:5px;border:1px solid rgba(255,255,255,.13);border-radius:999px;background:rgba(12,13,15,.7);box-shadow:inset 0 1px rgba(255,255,255,.07),0 12px 42px #0004;backdrop-filter:blur(18px)}
 .tab{padding:8px 16px;border:0;border-radius:999px;background:transparent;color:#9c9c9d;font-size:12px}.tab.active{background:#ffffff1a;color:#fff}
 .hero{position:relative;min-height:500px;padding-top:60px;padding-bottom:60px;text-align:center}.eyebrow{display:inline-flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid var(--border);border-radius:99px;background:#0f1012a6;color:#c4c2c0;font-size:10px;letter-spacing:.15em}.eyebrow i{width:6px;height:6px;border-radius:50%;background:#ff6848;box-shadow:0 0 10px #ff6848}.eyebrow span{color:#656466}
@@ -397,3 +397,60 @@ h3 { font-size: 24px; }
 .letter-reveal.scroll-wipe::after { content: none; }
 @keyframes letter-slide-down { from { opacity: 0; transform: translateY(-115%); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .letter-reveal.letters-visible .letter-inner { animation: none; } }
+
+/* Compact, readable race selectors. */
+.controls.panel {
+  width: fit-content;
+  max-width: 100%;
+  gap: 10px 14px;
+  align-items: flex-end;
+  padding: 12px;
+  border-color: rgba(255,255,255,.14);
+  border-radius: 10px;
+  background: linear-gradient(115deg,rgba(27,28,30,.94),rgba(15,16,18,.96));
+  box-shadow: 0 12px 32px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035);
+}
+.controls label {
+  gap: 5px;
+  color: #c0bfc1;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .015em;
+}
+.controls select {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 7px;
+  background: #101113;
+  color: #f5f5f4;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  transition: border-color .16s ease,background .16s ease;
+}
+.controls select:hover { border-color: rgba(255,255,255,.32); }
+.controls select:focus-visible { border-color: #ff6848; outline: 2px solid rgba(255,104,72,.24); outline-offset: 1px; }
+.controls #season { min-width: 160px; }
+.controls #race { min-width: 280px; }
+.controls #weather { min-width: 160px; }
+.controls .btns { gap: 8px; margin-left: 0; }
+.controls button { min-height: 42px; padding: 0 20px; border-radius: 7px; font-size: 15px; font-weight: 750; }
+.controls button.primary { box-shadow: 0 5px 15px rgba(255,104,72,.18); transition: transform .16s ease,filter .16s ease,box-shadow .16s ease; }
+.controls button.primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 7px 18px rgba(255,104,72,.28); }
+.controls.panel { margin-bottom: 6px; }
+#status:empty { min-height: 0; margin: 0; }
+#notes:empty { display: none; }
+@media(max-width:760px) {
+  .controls.panel { width: 100%; }
+  .controls label { flex: 1 1 150px; width: auto; }
+  .controls #race { flex-basis: 240px; }
+  .controls .btns { margin-left: auto; }
+}
+@media(max-width:600px) {
+  .controls.panel { gap: 10px; padding: 12px; }
+  .controls label,.controls #race { flex: 1 1 100%; width: 100%; }
+  .controls #season,.controls #race,.controls #weather { min-width: 0; width: 100%; }
+  .controls .btns { width: 100%; margin-left: 0; }
+  .controls .btns button { flex: 1; }
+}
