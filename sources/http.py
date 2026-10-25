@@ -8,6 +8,10 @@ import urllib.request
 from collections import deque
 from pathlib import Path
 
+from .tls import configure_tls
+
+configure_tls()
+
 CACHE = Path("cache") / "http"
 UA = "f1-predictor/1.0 (personal research project)"
 EMPTY_TTL = 3600  # empty answers (data not published yet?) are re-checked after an hour
