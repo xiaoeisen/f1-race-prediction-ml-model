@@ -15,21 +15,23 @@ TEAM_ALIASES = {
     "Alpine F1 Team": "Alpine", "RB F1 Team": "RB",
 }
 
-FEATURES = [
+FEATURES_WITH_PACE = [
     # this weekend (known before lights out)
     "grid", "grid_pen", "quali_pos", "q_best_gap", "q_best_gap_vs_tm",
     "fp1_best_gap", "fp2_best_gap", "fp3_best_gap", "fp1_pos", "fp2_pos", "fp3_pos",
     "fp1_long_gap", "fp2_long_gap", "long_pace", "long_pace_rank", "fp2_long_gap_vs_tm",
+    "fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10",
     "q_s1_gap", "q_s2_gap", "q_s3_gap", "q_topspeed_gap", "q_straight_bias",
     "air_temp", "track_temp", "humidity", "wind", "rain", "is_sprint",
     # driver skill / tendencies
     "drv_elo", "drv_finish_l5", "drv_finish_l10", "drv_grid_l5", "drv_gain_l10",
     "drv_dnf_l20", "drv_circuit_finish", "drv_circuit_n", "drv_wet_gain", "drv_races",
-    "drv_pace_l5", "drv_pace_vs_tm_l5", "drv_lap1_gain_l10", "drv_stops_l10", "drv_ot_net_l10",
+    "drv_pace_l5", "drv_pace_vs_tm_l5", "drv_deg_l5", "drv_lap1_gain_l10", "drv_stops_l10", "drv_ot_net_l10",
     "drv_qtm_l10", "drv_ftm_l10",   # driver vs teammate (same car) = driver skill isolated
     # car / team (finishing results AND true race pace)
     "team_elo", "team_finish_l5", "team_grid_l5", "team_dnf_l10",
-    "team_pace_l3", "team_pace_l8", "team_pace_trend", "team_pitlane_l10", "team_stop_l10",
+    "team_pace_l3", "team_pace_l8", "team_pace_trend", "team_deg_l3", "team_deg_l8",
+    "team_pitlane_l10", "team_stop_l10",
     # circuit character
     "circ_overtake", "circ_dnf", "circ_sc_rate", "circ_red_rate", "circ_sc_frac", "circ_stops",
     "street", "pit_loss", "tyre_wear",
@@ -39,6 +41,28 @@ FEATURES = [
     "elo_sum_rk", "drv_elo_rk", "team_elo_rk", "drv_finish_l5_rk", "team_finish_l5_rk",
     "team_pace_l3_rk", "q_best_gap_rk", "drv_pace_l5_rk",
 ]
+
+# Added with the lap-level tyre-wear work; omit these from the prior-model baseline.
+NEW_PACE_FEATURES = {"fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10",
+                     "drv_deg_l5", "team_deg_l3", "team_deg_l8"}
+
+# Signals whose value comes from long-run pace, tyre wear, qualifying sectors or
+# historical race pace. Kept as one list so the chronological benchmark can run
+# a clean pace-feature ablation against the same races and folds.
+PACE_FEATURES = {
+    "fp1_long_gap", "fp2_long_gap", "long_pace", "long_pace_rank", "fp2_long_gap_vs_tm",
+    "fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10",
+    "q_s1_gap", "q_s2_gap", "q_s3_gap", "q_topspeed_gap", "q_straight_bias",
+    "drv_pace_l5", "drv_pace_vs_tm_l5", "drv_deg_l5",
+    "team_pace_l3", "team_pace_l8", "team_pace_trend", "team_deg_l3", "team_deg_l8",
+    "team_pace_l3_rk", "drv_pace_l5_rk",
+}
+PACE_PL_FEATURES = ["fp1_long_gap", "fp2_long_gap", "drv_pace_l5", "team_pace_l3",
+                    "drv_deg_l5", "team_deg_l3"]
+
+# Keep the full signal set in the production model; the benchmark contains a
+# paired no-pace ablation so sparse-data value is measured on each refresh.
+FEATURES = FEATURES_WITH_PACE
 
 # Before qualifying the grid and quali results don't exist yet: the "pre" model never sees them
 QUALI_FEATURES = {"grid", "grid_pen", "grid_log", "quali_pos", "q_best_gap", "q_best_gap_vs_tm", "q_best_gap_rk",
@@ -50,7 +74,8 @@ PL_FEATURES = ["grid_log", "quali_pos", "q_best_gap", "fp1_best_gap", "fp2_best_
                "team_dnf_l10", "pts_before", "champ_pos", "drv_qtm_l10", "drv_ftm_l10"]
 PL_FEATURES_PRE = [c for c in PL_FEATURES if c not in QUALI_FEATURES]
 # raw columns blanked to imitate "right after FP1" when training the pre-quali model
-LATE_PRACTICE_COLS = ["fp2_best_gap", "fp3_best_gap", "fp2_long_gap"]
+LATE_PRACTICE_COLS = ["fp2_best_gap", "fp3_best_gap", "fp2_long_gap",
+                      "fp2_deg_per10", "fp3_deg_per10"]
 
 RANK_SOURCES = ["elo_sum", "drv_elo", "team_elo", "drv_finish_l5", "team_finish_l5", "team_pace_l3", "q_best_gap", "drv_pace_l5"]
 RANK_HIGH_GOOD = {"elo_sum", "drv_elo", "team_elo"}      # for these a HIGHER value is better
@@ -59,6 +84,10 @@ RANK_FEATURES = [c + "_rk" for c in RANK_SOURCES]
 # columns older CSVs may lack -> created empty so nothing crashes
 OPTIONAL_COLS = [
     "fp1_best_gap", "fp2_best_gap", "fp3_best_gap", "fp1_long_gap", "fp2_long_gap",
+    "fp1_best_time_s", "fp2_best_time_s", "fp3_best_time_s", "fp1_gap_s", "fp2_gap_s", "fp3_gap_s",
+    "fp1_laps", "fp2_laps", "fp3_laps", "q_best_time_s", "q_gap_s", "q_time_segment_valid", "quali_laps",
+    "race_best_lap_s", "race_avg_clean_lap_s", "race_laps",
+    "fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10", "race_deg_per10",
     "air_temp", "track_temp", "humidity", "wind", "rain", "is_sprint", "points", "dnf",
     "race_pace_gap", "lap1_gain", "race_sc", "race_vsc", "race_red", "sc_frac",
     "q_s1_gap", "q_s2_gap", "q_s3_gap", "q_topspeed_gap",
@@ -171,11 +200,13 @@ def add_features(df, cfg=None):
     # finished races the model trains on the qualifying-session weather (cfg weather='pre'); upcoming races use the
     # live forecast that apply_live() writes into these same columns. weather='race' keeps the old behaviour (leaks).
     rain_seen = df["rain"].copy()          # what actually happened: only ever used for HISTORY (wet_gain below)
-    if cfg["weather"] == "pre" and "q_rain" in df:
-        known = df["finish"].notna() & df["q_rain"].notna()
+    if cfg["weather"] == "pre":
+        finished = df["finish"].notna()
         for c in ("rain", "air_temp", "track_temp", "humidity", "wind"):
             if f"q_{c}" in df:
-                df.loc[known, c] = df.loc[known, f"q_{c}"]
+                df.loc[finished, c] = df.loc[finished, f"q_{c}"]
+            else:
+                df.loc[finished, c] = np.nan
     df["gain"] = df["grid"] - df["finish"]                       # positions gained on Sunday
     df["gain_clean"] = df["gain"].where(df["dnf"] == 0)          # ignore retirements
     df["wet_gain"] = df["gain_clean"].where(rain_seen >= 0.5)    # past wet races (shifted before use, so no leak)
@@ -203,6 +234,7 @@ def add_features(df, cfg=None):
     df["drv_wet_gain"] = _past(df, "driver", "wet_gain")            # wet-weather tendency
     df["drv_pace_l5"] = _past(df, "driver", "race_pace_gap", 5)     # true Sunday pace
     df["drv_pace_vs_tm_l5"] = _past(df, "driver", "pace_vs_tm", 5)  # pace vs teammate (driver, not car)
+    df["drv_deg_l5"] = _past(df, "driver", "race_deg_per10", 5)    # historical race tyre degradation
     df["drv_lap1_gain_l10"] = _past(df, "driver", "lap1_gain", 10)  # first-lap tendency
     df["drv_qtm_l10"] = _past(df, "driver", "q_best_gap_vs_tm", 10)   # qualifying vs teammate, history
     df["drv_ftm_l10"] = _past(df, "driver", "finish_vs_tm", 10)       # race result vs teammate, history
@@ -216,7 +248,8 @@ def add_features(df, cfg=None):
     # ---- team history (team-level table: one row per team per race)
     t = (df.groupby(["race_id", "team"], as_index=False)
            .agg(finish=("finish", "mean"), grid=("grid", "mean"), dnf=("dnf", "mean"),
-                pace=("race_pace_gap", "mean"), pitlane=("pit_lane_s", "mean"), stop=("stop_s", "mean"),
+                pace=("race_pace_gap", "mean"), deg=("race_deg_per10", "mean"),
+                pitlane=("pit_lane_s", "mean"), stop=("stop_s", "mean"),
                 mech=("dnf_mech", "mean"))
            .sort_values(["race_id", "team"]).reset_index(drop=True))
     t["team_finish_l5"] = _past(t, "team", "finish", 5)
@@ -226,13 +259,15 @@ def add_features(df, cfg=None):
     t["team_pace_l3"] = _past(t, "team", "pace", 3)
     t["team_pace_l8"] = _past(t, "team", "pace", 8)
     t["team_pace_trend"] = t["team_pace_l3"] - t["team_pace_l8"]    # negative = car getting faster (upgrades)
+    t["team_deg_l3"] = _past(t, "team", "deg", 3)
+    t["team_deg_l8"] = _past(t, "team", "deg", 8)
     t["team_pitlane_l10"] = _past(t, "team", "pitlane", 10)         # pit-crew / pit-lane efficiency
     t["team_stop_l10"] = _past(t, "team", "stop", 10)               # stationary stop time (2024+)
     t["year"] = t["race_id"].map(df.groupby("race_id")["year"].first())
     t["team_elo"] = _elo(t.rename(columns={"team": "id"})[["race_id", "id", "finish", "year"]],
                          k=cfg["elo_k"], shrink=cfg["elo_team_shrink"], reg_shrink=cfg["elo_reg_shrink"])
     team_cols = ["team_finish_l5", "team_grid_l5", "team_dnf_l10", "team_mech_l10", "team_pace_l3", "team_pace_l8",
-                 "team_pace_trend", "team_pitlane_l10", "team_stop_l10", "team_elo"]
+                 "team_pace_trend", "team_deg_l3", "team_deg_l8", "team_pitlane_l10", "team_stop_l10", "team_elo"]
     df = df.merge(t[["race_id", "team"] + team_cols], on=["race_id", "team"], how="left")
 
     # ---- driver Elo

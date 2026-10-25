@@ -60,6 +60,15 @@ def fit_plackett_luce(X, race, order_key, weights, lam=30.0, top=10):
     return minimize(objective, np.zeros(d), jac=True, method="L-BFGS-B", options={"maxiter": 300}).x
 
 
+# Chronological comparison favored a lighter grid prior for winner and podium accuracy.
+FULL_GRID_PRIOR_WEIGHT = 0.5
+# The 2026 regulation reset left fewer useful carry-over car-pace signals. The
+# season-only walk-forward found that leaning more on grid position improved
+# podium and top-five overlap without reducing winner hits for this season.
+REG_RESET_SEASON = 2026
+REG_RESET_GRID_PRIOR_WEIGHT = 1.25
+
+
 class RankEnsemble:
     """fit(df) / predict(df): df needs a race_id column. Higher score = finishes better."""
     needs_frame = True  # predict() takes the whole feature frame, not just model.features
@@ -88,7 +97,11 @@ class RankEnsemble:
         X, _ = _pl_matrix(df, self.pl_features, self.pl_stats)
         parts = {"trees": _z(gbm, race), "linear": _z(X @ self.pl_beta, race)}
         if self.prior_weight:
-            parts["grid"] = self.prior_weight * _z(-df["grid_log"].fillna(df["grid_log"].max()).to_numpy(float), race)
+            prior = np.full(len(df), self.prior_weight, dtype=float)
+            if "year" in df:
+                prior[df["year"].to_numpy() == REG_RESET_SEASON] = max(
+                    self.prior_weight, REG_RESET_GRID_PRIOR_WEIGHT)
+            parts["grid"] = prior * _z(-df["grid_log"].fillna(df["grid_log"].max()).to_numpy(float), race)
         return parts
 
     def predict(self, df):

@@ -8,6 +8,7 @@ import pandas as pd
 import extras
 
 from features import add_features
+from metrics import race_outcome_probabilities
 
 
 def predict_race(hist, new, bundle, n_sims=20000, seed=0):
@@ -22,22 +23,22 @@ def predict_race(hist, new, bundle, n_sims=20000, seed=0):
     cur["score"] = scores
 
     # Plackett-Luce Monte Carlo: sample many plausible finishing orders
-    rng = np.random.default_rng(seed)
-    noisy = scores / bundle["temperature"] + rng.gumbel(size=(n_sims, len(cur)))
-    # retirements: a driver's chance = own error-proneness + car unreliability (history; ~15% on average).
-    # A retired driver drops to the back, so nobody gets a 99.9% podium chance.
+    # Share the seeded simulator with training-time probability calibration.
     p_out = (cur["drv_inc_l20"].fillna(0.06) + cur["team_mech_l10"].fillna(0.08)).clip(0.03, 0.35).to_numpy()
-    noisy = np.where(rng.random(noisy.shape) < p_out, -1e9, noisy)
-    ranks = (-noisy).argsort(axis=1).argsort(axis=1) + 1   # 1 = winner
-
-    cur["exp_pos"] = ranks.mean(axis=0)
-    cur["win_%"] = (ranks == 1).mean(axis=0) * 100
-    cur["podium_%"] = (ranks <= 3).mean(axis=0) * 100
-    cur["top10_%"] = (ranks <= 10).mean(axis=0) * 100
+    probs = race_outcome_probabilities(scores, p_out, bundle["temperature"], n_sims, seed)
+    cur["exp_pos"] = probs["expected_pos"]
+    cur["win_%"] = probs["win"] * 100
+    cur["podium_%"] = probs["podium"] * 100
+    cur["top10_%"] = probs["top10"] * 100
     cur = cur.sort_values("score", ascending=False).reset_index(drop=True)
     cur["pred_pos"] = np.arange(1, len(cur) + 1)
     return cur[["pred_pos", "driver", "full_name", "team", "grid", "quali_pos", "q_best_gap",
-                "fp1_pos", "fp1_best_gap", "fp2_pos", "fp2_best_gap", "fp3_pos", "fp3_best_gap", "exp_pos", "win_%", "podium_%", "top10_%", "score"]
+                "fp1_pos", "fp1_best_gap", "fp2_pos", "fp2_best_gap", "fp3_pos", "fp3_best_gap",
+                "fp1_best_time_s", "fp1_gap_s", "fp1_laps", "fp2_best_time_s", "fp2_gap_s", "fp2_laps",
+                "fp3_best_time_s", "fp3_gap_s", "fp3_laps", "q_best_time_s", "q_gap_s", "q_time_segment_valid", "quali_laps",
+                "fp1_long_gap", "fp2_long_gap", "fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10",
+                "race_pace_gap", "race_deg_per10", "race_best_lap_s", "race_avg_clean_lap_s", "race_laps",
+                "exp_pos", "win_%", "podium_%", "top10_%", "score"]
                + (["finish"] if cur["finish"].notna().any() else [])]
 
 

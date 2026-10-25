@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>F1 Race Prediction</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261024-text-color-grid">
+  <link rel="stylesheet" href="/static/style.css?v=20261024-solid-spaced-hero">
 </head>
 <body class="view-live">
 
@@ -51,7 +51,7 @@
   <section class="wrap driver-section" id="drivers" aria-labelledby="drivers-title">
     <div class="section-kicker">2026 GRID</div>
     <h2 id="drivers-title">Meet the drivers</h2>
-    <p class="hint driver-intro">Driver details for the current grid.</p>
+    <p class="hint driver-intro">Driver portraits and profile details from Formula1.com.</p>
     <div class="driver-grid" id="driver-grid"></div>
   </section>
   <section class="wrap explore-section" id="explore">
@@ -110,7 +110,7 @@
     <section class="panel" id="session-standings-panel" hidden>
       <div class="head">
         <h2>Weekend session standings</h2>
-        <p class="hint" id="session-standings-note">Session order is sorted fastest to slowest. The starting grid uses official grid data when available and qualifying as a fallback.</p>
+        <p class="hint" id="session-standings-note">Practice and qualifying show the fastest lap and gap in seconds. Race pace summarizes clean laps, tyre degradation, and team averages where timing data is available.</p>
       </div>
       <div id="session-tabs" class="session-tabs" role="tablist" aria-label="Grand Prix sessions"></div>
       <div id="session-standing-table" class="scroll" role="tabpanel"></div>
@@ -138,8 +138,8 @@
   </main>
 
   <footer class="wrap">Built with FastF1 data and LightGBM. Predictions are for fun and learning, not betting advice.</footer>
-  <script src="/static/drivers.js?v=20261024-inline-country-flags"></script>
-  <script src="/static/app.js?v=20261024-outlined-hero"></script>
+  <script src="/static/drivers.js?v=20261024-hulkenberg-photo-fix"></script>
+  <script src="/static/app.js?v=20261025-session-lap-times"></script>
 </body>
 </html>
 

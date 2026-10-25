@@ -77,7 +77,9 @@ td.team { color: var(--muted); }
 .session-tab.active { border-color: var(--accent); background: rgba(255,104,72,.15); color: var(--text); }
 #session-standing-table { max-height: 680px; overflow: auto; }
 #session-standing-table .session-standing-table { min-width: 0; }
+#session-standing-table .pace-analysis-table { min-width: 820px; }
 .session-standing-table td { font-size: 16px; }
+.session-standing-table .driver-thumb { width: 38px; height: 46px; }
 .session-standing-table .standing-driver { display: inline-flex; align-items: center; gap: 9px; }
 .session-standing-table .swatch { margin: 0; }
 @media (max-width: 600px) { .session-tab { flex: 1 1 auto; padding: 8px 10px; } }
@@ -90,6 +92,8 @@ td.team { color: var(--muted); }
 .standing-position { color: var(--muted); }
 .standing-number { font-variant-numeric: tabular-nums; font-weight: 700; }
 .standing-driver, .standing-team { display: inline-flex; align-items: center; gap: 8px; }
+.standings-table .driver-thumb { width: 54px; height: 54px; border: 1px solid #ffffff20; border-radius: 50%; object-position: center top; }
+.standings-table .team-logo-thumb { display: block; width: 50px; height: 50px; flex: none; padding: 0; border: 0; border-radius: 0; background: transparent; object-fit: contain; }
 .standings-table .swatch { margin: 0; }
 @media (max-width: 760px) { .standings-grid { grid-template-columns: 1fr; } }
 .driver-cell { display: flex; align-items: center; gap: 8px; }
@@ -98,6 +102,7 @@ td.team { color: var(--muted); }
 #table .fullname { font-size: 15px; }
 #table .prob-ring { width: 44px; height: 44px; }
 #table .prob-ring .val { font-size: .95rem; }
+.driver-thumb { display: block; width: 46px; height: 56px; flex: none; border-radius: 5px; object-fit: cover; object-position: center top; background: #202124; }
 .swatch { flex: none; margin-right: 0; }
 .code { font-weight: 650; }
 .fullname { color: var(--muted); font-size: .85rem; margin-left: 6px; }
@@ -317,6 +322,34 @@ h3 { font-size: 24px; }
   border-color: rgba(255,104,72,.55);
   background: rgba(27,25,25,.96);
 }
+.driver-portrait {
+  position: relative;
+  display: flex;
+  height: 190px;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 100%, color-mix(in srgb, var(--team-colour) 25%, transparent), transparent 70%), #101113;
+  border-bottom: 1px solid var(--border);
+}
+.driver-portrait::after {
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 2px;
+  background: var(--team-colour);
+  content: "";
+  opacity: .82;
+}
+.driver-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  transform: scale(1.28);
+  transform-origin: center top;
+}
 .driver-number {
   position: absolute;
   z-index: 1;
@@ -333,12 +366,22 @@ h3 { font-size: 24px; }
 .driver-name { margin: 0 0 5px; font-size: 20px; line-height: 1.05; }
 .driver-team { margin: 0; color: #ddd; font-size: 12px; }
 .driver-country { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.driver-flag { display: block; width: 18px; height: 14px; flex: none; border-radius: 2px; object-fit: cover; box-shadow: 0 0 0 1px #ffffff35; }
+.portrait-missing::before {
+  position: absolute;
+  top: 50%;
+  color: rgba(255,255,255,.16);
+  content: "F1";
+  font: 76px "Bebas Neue", sans-serif;
+  transform: translateY(-50%);
+}
 @media (max-width: 900px) {
   .driver-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 650px) {
   .driver-section { padding-top: 36px; }
   .driver-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .driver-portrait { height: 170px; }
   .driver-details { padding: 10px; }
   .driver-name { font-size: 18px; }
 }

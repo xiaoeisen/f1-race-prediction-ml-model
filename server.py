@@ -77,7 +77,7 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
         "form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'none'; connect-src 'self'"
+        "img-src 'self' data: https://media.formula1.com https://flagcdn.com; connect-src 'self'"
     ),
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -240,27 +240,75 @@ def pick_model(year, rnd, stage="full"):
     return final, False
 
 
+def _session_data_missing(rows):
+    required = ["quali_pos", "fp1_best_gap", "q_best_time_s", "q_time_segment_valid", "fp3_best_time_s"]
+    sprint = ("is_sprint" in rows and
+              pd.to_numeric(rows["is_sprint"], errors="coerce").fillna(0).max() > 0)
+    if not sprint:
+        required.extend(("fp2_best_gap", "fp3_best_gap"))
+    current_season = ("year" in rows and
+                      pd.to_numeric(rows["year"], errors="coerce").max() == pd.Timestamp.now().year)
+    if (current_season and "finish" in rows and
+            pd.to_numeric(rows["finish"], errors="coerce").notna().any()):
+        required.append("race_pace_gap")
+    return any(column not in rows or
+               not pd.to_numeric(rows[column], errors="coerce").notna().any()
+               for column in required)
+
+
+def _merge_session_data(saved, fetched):
+    if fetched is None or fetched.empty or "driver" not in fetched:
+        return saved.copy()
+    base = saved.set_index("driver", drop=False).copy()
+    fresh = fetched.drop_duplicates("driver", keep="last").set_index("driver")
+    session_columns = (
+        "quali_pos", "q_best_gap", "fp1_best_gap", "fp2_best_gap", "fp3_best_gap",
+        "q_best_time_s", "q_gap_s", "q_time_segment_valid", "quali_laps",
+        "fp1_best_time_s", "fp1_gap_s", "fp1_laps", "fp2_best_time_s", "fp2_gap_s", "fp2_laps",
+        "fp3_best_time_s", "fp3_gap_s", "fp3_laps", "fp1_long_gap", "fp2_long_gap",
+        "fp1_deg_per10", "fp2_deg_per10", "fp3_deg_per10",
+        "race_pace_gap", "race_deg_per10", "race_best_lap_s", "race_avg_clean_lap_s", "race_laps",
+    )
+    for column in session_columns:
+        if column not in fresh:
+            continue
+        incoming = fresh[column].reindex(base.index)
+        if column not in base:
+            base[column] = incoming
+        else:
+            base[column] = base[column].where(base[column].notna(), incoming)
+    return base.reset_index(drop=True)
+
+
 def weekend_rows(year, rnd):
     h = history()
     done = h[(h["year"] == year) & (h["round"] == rnd)]
-    if len(done):
-        return done.copy()
     key = (year, rnd)
     hit = _weekends.get(key)
     if hit and time.time() - hit[0] < WEEKEND_TTL:
         return hit[1].copy()
+    if len(done) and not _session_data_missing(done):
+        return done.copy()
+
     with _fetch_lock:
         try:
             df = collect.collect_weekend(year, rnd, schedule(year).loc[rnd])
         except HTTPException:
             raise
         except Exception:
+            if len(done):
+                _weekends[key] = (time.time(), done)
+                return done.copy()
             raise HTTPException(502, "Could not fetch session data from FastF1 right now.")
     if df.empty:
+        if len(done):
+            _weekends[key] = (time.time(), done)
+            return done.copy()
         raise HTTPException(404, "No session data is available for that weekend yet.")
+    if len(done):
+        df = _merge_session_data(done, df)
     _weekends[key] = (time.time(), df)
     return df.copy()
-
 
 # ---------------------------------------------------------------- API
 class PredictReq(BaseModel):
@@ -358,7 +406,10 @@ def predict(req: PredictReq):
     if not _predict_slots.acquire(timeout=10):
         raise HTTPException(503, "The server is busy. Try again in a moment.")
     try:
-        res = predict_race(history(), rows, bundle).round(2)
+        res = predict_race(history(), rows, bundle)
+        display_round = [column for column in ("exp_pos", "win_%", "podium_%", "top10_%", "score")
+                         if column in res]
+        res[display_round] = res[display_round].round(2)
     finally:
         _predict_slots.release()
 

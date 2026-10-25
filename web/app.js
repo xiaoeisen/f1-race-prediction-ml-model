@@ -32,34 +32,21 @@ function revealHeading(node, text = null) {
   splitText(node);
 }
 
-const TEAM_INFO = window.F1_TEAM_INFO || {};
-function normalizedKey(value) {
-  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-function getTeamInfo(name) {
-  const label=String(name||"Unknown team");
-  return TEAM_INFO[normalizedKey(label)]||{name:label,code:label.slice(0,3).toUpperCase(),color:"#8A8D91"};
-}
-function getDriverInfo(name,code) {
-  return window.F1_DRIVER_INFO?.byName?.[normalizedKey(name)]||window.F1_DRIVER_INFO?.byCode?.[String(code||"").toUpperCase()]||{};
-}
-function driverVisual(name,code) {
-  const info=getDriverInfo(name,code),team=getTeamInfo(info.team),mark=el("span",{className:"driver-visual"});
-  mark.style.cssText="display:inline-flex;align-items:center;gap:7px;flex:none;padding:5px 8px;border:1px solid color-mix(in srgb,"+team.color+" 45%,transparent);border-left:3px solid "+team.color+";border-radius:8px;background:color-mix(in srgb,"+team.color+" 11%,#151619);white-space:nowrap";
-  mark.style.setProperty("--team-color",team.color);
-  if(info.flag)mark.append(el("span",{className:"driver-visual-flag",textContent:info.flag,"aria-hidden":"true"}));
-  mark.append(el("strong",{className:"driver-visual-number",textContent:info.number?"#"+info.number:"?"}));
-  const codeNode=el("span",{className:"driver-visual-code",textContent:String(code||info.code||"DRV").toUpperCase()});
-  codeNode.style.cssText="font:700 10px/1 monospace;letter-spacing:.1em;color:"+team.color;
-  mark.append(codeNode);return mark;
-}
-function teamVisual(name) {
-  const info=getTeamInfo(name),chip=el("span",{className:"team-visual"});
-  chip.style.cssText="display:inline-flex;align-items:center;gap:8px;padding:5px 9px;border:1px solid color-mix(in srgb,"+info.color+" 40%,transparent);border-radius:8px;background:color-mix(in srgb,"+info.color+" 9%,#151619);white-space:nowrap";
-  chip.style.setProperty("--team-color",info.color);
-  const code=el("strong",{className:"team-visual-code",textContent:info.code});
-  code.style.cssText="font:700 10px/1 monospace;letter-spacing:.08em;color:"+info.color;
-  chip.append(code,el("span",{textContent:info.name}));return chip;
+const TEAM_COLORS = {
+  "Red Bull": "#3671C6", "Ferrari": "#E8002D", "Mercedes": "#27B5A0", "McLaren": "#FF8000",
+  "Aston Martin": "#229971", "Alpine": "#FF87BC", "Williams": "#64C4FF", "RB": "#6692FF",
+  "Sauber": "#2DBF2D", "Haas": "#8A8D91",
+};
+
+const TEAM_LOGO_IDS = {
+  "Mercedes": "mercedes", "Ferrari": "ferrari", "Red Bull": "redbullracing", "Red Bull Racing": "redbullracing",
+  "McLaren": "mclaren", "Racing Bulls": "racingbulls", "RB": "racingbulls", "Alpine": "alpine",
+  "Williams": "williams", "Aston Martin": "astonmartin", "Haas": "haas", "Haas F1 Team": "haas",
+  "Audi": "audi", "Cadillac": "cadillac",
+};
+
+function teamLogoUrl(teamId) {
+  return `https://media.formula1.com/image/upload/common/f1/2026/${teamId}/2026${teamId}logowhite.svg`;
 }
 const METRIC_LABELS = {
   spearman: ["Rank correlation", (v) => v.toFixed(2), true],
@@ -139,6 +126,18 @@ function el(tag, props = {}, ...kids) {
   return node;
 }
 
+function normalizeDriverName(name) {
+  return String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function driverPhotoUrl(name, code) {
+  const photos = window.F1_DRIVER_PHOTOS || {};
+  if (photos[name]) return photos[name];
+  if (code && window.F1_DRIVER_PHOTO_BY_CODE?.[code]) return window.F1_DRIVER_PHOTO_BY_CODE[code];
+  const key = normalizeDriverName(name);
+  const match = Object.entries(photos).find(([driverName]) => normalizeDriverName(driverName) === key);
+  return match?.[1] || null;
+}
 function setStatus(msg, isError = false, isLoading = false) {
   const s = $("status");
   s.replaceChildren();
@@ -202,26 +201,58 @@ async function loadStandings() {
   }
 }
 
-function renderStandingsTable(container,kind,rows) {
-  container.replaceChildren(); if(!rows.length)return;
-  const isDriver=kind==="driver",table=el("table",{className:"standings-table"});
-  const headings=isDriver?["Pos.","Driver","Team","Pts","Wins"]:["Pos.","Team","Pts","Wins"];
-  table.append(el("thead",{},el("tr",{},...headings.map(text=>el("th",{textContent:text})))));
-  const body=el("tbody");
-  rows.forEach(row=>{
-    const tr=el("tr");tr.append(el("td",{className:"standing-position",textContent:row.position}));
-    if(isDriver){
-      const driver=el("td",{},el("span",{className:"standing-driver"})),content=driver.firstChild;
-      content.append(driverVisual(row.full_name,row.code),el("span",{textContent:row.full_name}));
-      const team=getTeamInfo(row.team),teamCell=el("td",{className:"team",textContent:team.name});
-      teamCell.style.color=team.color;tr.append(driver,teamCell);
-    }else{const teamCell=el("td");teamCell.append(teamVisual(row.team));tr.append(teamCell);}
-    tr.append(el("td",{className:"standing-number",textContent:row.points}),el("td",{className:"standing-number",textContent:row.wins}));
+function renderStandingsTable(container, kind, rows) {
+  container.replaceChildren();
+  if (!rows.length) return;
+  const isDriver = kind === "driver";
+  const table = el("table", { className: "standings-table" });
+  const headings = isDriver ? ["Pos.", "Driver", "Team", "Pts", "Wins"] : ["Pos.", "Team", "Pts", "Wins"];
+  table.append(el("thead", {}, el("tr", {}, ...headings.map(text => el("th", { textContent: text })))));
+  const body = el("tbody");
+  rows.forEach(row => {
+    const tr = el("tr");
+    tr.append(el("td", { className: "standing-position", textContent: row.position }));
+    if (isDriver) {
+      const driver = el("td", {}, el("span", { className: "standing-driver" }));
+      const content = driver.firstChild;
+      const photoUrl = driverPhotoUrl(row.full_name, row.driver);
+      if (photoUrl) {
+        const photo = el("img", { className: "driver-thumb", src: photoUrl, alt: "",
+          loading: "lazy", decoding: "async", referrerPolicy: "no-referrer" });
+        photo.addEventListener("error", () => photo.remove(), { once: true });
+        content.append(photo);
+      }
+      content.append(el("span", { textContent: row.full_name }));
+      tr.append(driver, el("td", { className: "team", textContent: row.team }));
+    } else {
+      const teamCell = el("td");
+      const team = el("span", { className: "standing-team" });
+      const logoId = TEAM_LOGO_IDS[row.team];
+      if (logoId) {
+        const logo = el("img", { className: "team-logo-thumb", src: teamLogoUrl(logoId), alt: "", loading: "lazy",
+          decoding: "async", referrerPolicy: "no-referrer" });
+        logo.addEventListener("error", () => {
+          const swatch = el("span", { className: "swatch" });
+          swatch.style.background = TEAM_COLORS[row.team] || "#999";
+          logo.replaceWith(swatch);
+        }, { once: true });
+        team.append(logo);
+      } else {
+        const swatch = el("span", { className: "swatch" });
+        swatch.style.background = TEAM_COLORS[row.team] || "#999";
+        team.append(swatch);
+      }
+      team.append(el("span", { textContent: row.team }));
+      teamCell.append(team);
+      tr.append(teamCell);
+    }
+    tr.append(el("td", { className: "standing-number", textContent: row.points }),
+      el("td", { className: "standing-number", textContent: row.wins }));
     body.append(tr);
   });
-  table.append(body);container.append(table);
+  table.append(body);
+  container.append(table);
 }
-
 /* ---------------------------------------------------------------- predict */
 async function predict() {
   const btn = $("predict");
@@ -320,25 +351,59 @@ function render(data) {
   document.querySelectorAll(".actual-col").forEach((c) => (c.hidden = !hasActual));
   const tbody = document.querySelector("#table tbody");
   tbody.replaceChildren();
-  rows.forEach((r) => tbody.append(tableRow(r, hasActual)));
+  rows.forEach((r) => tbody.append(tableRow(r, hasActual, rows)));
   $("results").hidden = false;
   renderSessionStandings(meta, rows);
 }
 
+function sessionNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function sessionPosition(row, session, rows) {
+  const actualPosition = sessionNumber(row[session.position]);
+  if (actualPosition !== null) return actualPosition;
+  if (!session.gap) return null;
+  const gap = sessionNumber(row[session.gap]);
+  if (gap === null) return null;
+  const fasterDrivers = rows.filter(other => {
+    const otherGap = sessionNumber(other[session.gap]);
+    return otherGap !== null && otherGap < gap;
+  }).length;
+  return fasterDrivers + 1;
+}
+function formatLapTime(value) {
+  const seconds = sessionNumber(value);
+  if (seconds === null || seconds <= 0) return "No time";
+  const minutes = Math.floor(seconds / 60);
+  const remainder = (seconds - minutes * 60).toFixed(3).padStart(6, "0");
+  return `${minutes}:${remainder}`;
+}
+function formatTimeGap(value) {
+  const seconds = sessionNumber(value);
+  if (seconds === null || Math.abs(seconds) < 0.0005) return "—";
+  return `+${seconds.toFixed(3)}s`;
+}
 function renderSessionStandings(meta, rows) {
   const panel = $("session-standings-panel");
   const tabs = $("session-tabs");
   const container = $("session-standing-table");
   const sessions = [
-    { id: "fp1", label: "FP1", position: "fp1_pos", gap: "fp1_best_gap" },
-    { id: "fp2", label: "FP2", position: "fp2_pos", gap: "fp2_best_gap" },
-    { id: "fp3", label: "FP3", position: "fp3_pos", gap: "fp3_best_gap" },
-    { id: "quali", label: "Qualifying", position: "quali_pos", gap: "q_best_gap" },
+    { id: "fp1", label: "FP1", position: "fp1_pos", gap: "fp1_best_gap", time: "fp1_best_time_s", gapS: "fp1_gap_s", laps: "fp1_laps" },
+    { id: "fp2", label: "FP2", position: "fp2_pos", gap: "fp2_best_gap", time: "fp2_best_time_s", gapS: "fp2_gap_s", laps: "fp2_laps" },
+    { id: "fp3", label: "FP3", position: "fp3_pos", gap: "fp3_best_gap", time: "fp3_best_time_s", gapS: "fp3_gap_s", laps: "fp3_laps" },
+    { id: "quali", label: "Qualifying", position: "quali_pos", gap: "q_best_gap", time: "q_best_time_s", gapS: "q_gap_s", laps: "quali_laps" },
     { id: "grid", label: "Starting Grid", position: "grid", gap: null },
+    { id: "long_run", label: "Long Runs", kind: "long_run" },
+    { id: "race_pace", label: "Race Pace", kind: "race_pace" },
+    { id: "team_pace", label: "Team Pace", kind: "team_pace" },
   ];
   tabs.replaceChildren();
-  const initial = sessions.find(session => rows.some(row =>
-    row[session.position] !== null && row[session.position] !== undefined && row[session.position] !== "")) || sessions[0];
+  const initial = sessions.find(session => session.time && rows.some(row => sessionNumber(row[session.time]) !== null))
+    || sessions.find(session => !session.kind && rows.some(row => sessionPosition(row, session, rows) !== null))
+    || sessions[0];
 
   function showSession(selected) {
     tabs.querySelectorAll(".session-tab").forEach(button => {
@@ -347,10 +412,21 @@ function renderSessionStandings(meta, rows) {
       button.setAttribute("aria-selected", String(active));
       button.tabIndex = active ? 0 : -1;
     });
-    const results = rows.filter(row => {
-      const position = row[selected.position];
-      return position !== null && position !== undefined && position !== "" && Number.isFinite(Number(position));
-    }).sort((a, b) => Number(a[selected.position]) - Number(b[selected.position]));
+    if (selected.kind === "race_pace") {
+      renderRacePaceTable(container, rows);
+      return;
+    }
+    if (selected.kind === "long_run") {
+      renderLongRunTable(container, rows);
+      return;
+    }
+    if (selected.kind === "team_pace") {
+      renderTeamPaceTable(container, rows);
+      return;
+    }
+    const results = rows.map(row => ({ row, position: sessionPosition(row, selected, rows) }))
+      .filter(result => result.position !== null)
+      .sort((a, b) => a.position - b.position);
     container.replaceChildren();
     if (!results.length) {
       container.append(note("info", selected.label + " results are not available yet for this Grand Prix."));
@@ -359,28 +435,51 @@ function renderSessionStandings(meta, rows) {
 
     const table = el("table", { className: "session-standing-table" });
     const header = el("tr");
-    ["Pos.", "Driver", "Team"].concat(selected.gap ? ["Gap to fastest"] : []).forEach(label =>
+    const preciseTimeAvailable = selected.time && results.some(({ row }) => sessionNumber(row[selected.time]) !== null);
+    const hasLapCount = selected.laps && results.some(({ row }) => sessionNumber(row[selected.laps]) !== null);
+    const headings = ["Pos.", "Driver", "Team"];
+    if (preciseTimeAvailable) headings.push(selected.id === "quali" ? "Qualifying time / gap" : "Best lap / gap");
+    else if (selected.gap) headings.push("Gap to fastest");
+    if (hasLapCount) headings.push("Laps");
+    headings.forEach(label =>
       header.append(el("th", { textContent: label })));
     table.append(el("thead", {}, header));
     const body = el("tbody");
-    results.forEach(row => {
+    results.forEach(({ row, position }) => {
       const tr = el("tr");
-      tr.append(el("td", { className: "standing-position", textContent: "P" + Math.round(row[selected.position]) }));
+      tr.append(el("td", { className: "standing-position", textContent: "P" + Math.round(position) }));
       const driverCell = el("td");
-      const driver=el("span",{className:"standing-driver"});
-      driver.append(driverVisual(row.full_name||row.driver,row.driver),
-        el("span",{textContent:row.full_name||row.driver}));
+      const driver = el("span", { className: "standing-driver" });
+      const photoUrl = driverPhotoUrl(row.full_name, row.driver);
+      if (photoUrl) {
+        const photo = el("img", { className: "driver-thumb", src: photoUrl, alt: "",
+          loading: "lazy", decoding: "async", referrerPolicy: "no-referrer" });
+        photo.addEventListener("error", () => photo.remove(), { once: true });
+        driver.append(photo);
+      }
+      driver.append(el("span", { textContent: row.full_name || row.driver }));
       driverCell.append(driver);
-      const team = getTeamInfo(row.team);
-      const teamCell = el("td");
-      teamCell.append(teamVisual(row.team));
-      teamCell.style.color = team.color;
-      tr.append(driverCell, teamCell);
-      if (selected.gap) {
+      tr.append(driverCell, el("td", { className: "team", textContent: row.team || "—" }));
+      if (preciseTimeAvailable) {
+        const time = sessionNumber(row[selected.time]);
+        const gap = sessionNumber(row[selected.gapS]);
+        const cell = el("td", { className: "standing-number" });
+        if (time !== null && (gap === null || Math.abs(gap) < 0.0005)) {
+          cell.textContent = formatLapTime(time);
+        } else if (gap !== null) {
+          cell.textContent = formatTimeGap(gap);
+          if (time !== null) cell.title = "Best lap: " + formatLapTime(time);
+        } else {
+          cell.textContent = time === null ? "No time" : formatLapTime(time);
+        }
+        tr.append(cell);
+      } else if (selected.gap) {
         const gap = row[selected.gap];
         tr.append(el("td", { className: "standing-number", textContent:
           gap === null || gap === undefined || !Number.isFinite(Number(gap)) ? "—" : "+" + Number(gap).toFixed(2) + "%" }));
       }
+      if (hasLapCount) tr.append(el("td", { className: "standing-number", textContent:
+        sessionNumber(row[selected.laps]) === null ? "—" : String(Math.round(Number(row[selected.laps]))) }));
       body.append(tr);
     });
     table.append(body);
@@ -397,6 +496,104 @@ function renderSessionStandings(meta, rows) {
   });
   showSession(initial);
   panel.hidden = false;
+}
+function renderRacePaceTable(container, rows) {
+  const results = rows.filter(row => sessionNumber(row.race_pace_gap) !== null)
+    .sort((a, b) => Number(a.race_pace_gap) - Number(b.race_pace_gap));
+  if (!results.length) {
+    container.replaceChildren(note("info", "Race lap pace is not available for this Grand Prix yet."));
+    return;
+  }
+  const table = el("table", { className: "session-standing-table pace-analysis-table" });
+  const head = el("tr");
+  ["Pace rank", "Driver", "Team", "Filtered pace gap", "Best filtered lap", "Filtered lap average", "Deg. / 10 laps", "Race laps"]
+    .forEach(label => head.append(el("th", { textContent: label })));
+  table.append(el("thead", {}, head));
+  const body = el("tbody");
+  results.forEach((row, index) => {
+    const tr = el("tr");
+    const deg = sessionNumber(row.race_deg_per10);
+    const laps = sessionNumber(row.race_laps);
+    [String(index + 1), row.full_name || row.driver, row.team || "—",
+      "+" + Number(row.race_pace_gap).toFixed(3) + "%",
+      formatLapTime(row.race_best_lap_s), formatLapTime(row.race_avg_clean_lap_s), deg === null ? "—" : deg.toFixed(3) + "%",
+      laps === null ? "—" : String(Math.round(laps))].forEach((value, column) =>
+      tr.append(el("td", { className: column === 0 ? "standing-position" : "standing-number", textContent: value })));
+    body.append(tr);
+  });
+  table.append(body);
+  container.replaceChildren(table);
+}
+function renderLongRunTable(container, rows) {
+  const results = rows.filter(row => ["fp1_long_gap", "fp2_long_gap"].some(key => sessionNumber(row[key]) !== null))
+    .sort((a, b) => {
+      const avg = row => [sessionNumber(row.fp1_long_gap), sessionNumber(row.fp2_long_gap)]
+        .filter(value => value !== null).reduce((sum, value, _, values) => sum + value / values.length, 0);
+      return avg(a) - avg(b);
+    });
+  if (!results.length) {
+    container.replaceChildren(note("info", "Long-run pace data is not available for this Grand Prix yet."));
+    return;
+  }
+  const table = el("table", { className: "session-standing-table pace-analysis-table" });
+  const head = el("tr");
+  ["Driver", "Team", "FP1 long-run gap", "FP2 long-run gap", "FP1 deg. / 10 laps", "FP2 deg. / 10 laps", "FP3 deg. / 10 laps"]
+    .forEach(label => head.append(el("th", { textContent: label })));
+  table.append(el("thead", {}, head));
+  const body = el("tbody");
+  results.forEach(row => {
+    const value = (key, suffix = "%") => sessionNumber(row[key]) === null ? "—" : Number(row[key]).toFixed(3) + suffix;
+    const tr = el("tr");
+    [row.full_name || row.driver, row.team || "—", value("fp1_long_gap", "%"), value("fp2_long_gap", "%"),
+      value("fp1_deg_per10"), value("fp2_deg_per10"), value("fp3_deg_per10")].forEach((text, column) =>
+      tr.append(el("td", { className: column === 1 ? "team" : "standing-number", textContent: text })));
+    body.append(tr);
+  });
+  table.append(body);
+  container.replaceChildren(table);
+}
+function renderTeamPaceTable(container, rows) {
+  const teams = new Map();
+  rows.forEach(row => {
+    if (!row.team) return;
+    if (!teams.has(row.team)) teams.set(row.team, { team: row.team, drivers: [] });
+    teams.get(row.team).drivers.push(row);
+  });
+  const summary = [...teams.values()].map(team => {
+    const values = key => team.drivers.map(row => sessionNumber(row[key])).filter(value => value !== null);
+    const mean = key => values(key).length ? values(key).reduce((sum, value) => sum + value, 0) / values(key).length : null;
+    const best = key => values(key).length ? Math.min(...values(key)) : null;
+    return { ...team, qBest: best("q_best_time_s"), qGap: best("q_gap_s"), fp3Best: best("fp3_best_time_s"),
+      fp3Gap: best("fp3_gap_s"), longPace: mean("fp2_long_gap") ?? mean("fp1_long_gap"),
+      racePace: mean("race_pace_gap"), raceAverage: mean("race_avg_clean_lap_s"),
+      raceBest: best("race_best_lap_s"), raceDegradation: mean("race_deg_per10") };
+  });
+  const hasAny = summary.some(team => team.qBest !== null || team.fp3Best !== null || team.longPace !== null || team.racePace !== null);
+  if (!hasAny) {
+    container.replaceChildren(note("info", "Team timing and pace data is not available for this Grand Prix yet."));
+    return;
+  }
+  summary.sort((a, b) => (a.racePace ?? a.longPace ?? Infinity) - (b.racePace ?? b.longPace ?? Infinity));
+  const table = el("table", { className: "session-standing-table pace-analysis-table" });
+  const head = el("tr");
+  ["Team", "Drivers", "Quali best", "FP3 best", "Long-run gap", "Race pace gap", "Race best filtered lap", "Race filtered lap avg.", "Race deg. / 10 laps"]
+    .forEach(label => head.append(el("th", { textContent: label })));
+  table.append(el("thead", {}, head));
+  const body = el("tbody");
+  summary.forEach(team => {
+    const tr = el("tr");
+    const q = team.qBest === null ? "—" : formatLapTime(team.qBest) + (team.qGap > 0.0005 ? ` (+${team.qGap.toFixed(3)}s)` : "");
+    const fp3 = team.fp3Best === null ? "—" : formatLapTime(team.fp3Best) + (team.fp3Gap > 0.0005 ? ` (+${team.fp3Gap.toFixed(3)}s)` : "");
+    const deg = team.raceDegradation === null ? "—" : team.raceDegradation.toFixed(3) + "%";
+    [team.team, team.drivers.map(row => row.driver).join(" / "), q, fp3,
+      team.longPace === null ? "—" : "+" + team.longPace.toFixed(3) + "%",
+      team.racePace === null ? "—" : "+" + team.racePace.toFixed(3) + "%",
+      formatLapTime(team.raceBest), formatLapTime(team.raceAverage), deg].forEach((value, column) =>
+      tr.append(el("td", { className: column === 0 ? "team" : "standing-number", textContent: value })));
+    body.append(tr);
+  });
+  table.append(body);
+  container.replaceChildren(table);
 }
 function bar(value, strong) {
   const v = value === null || value === undefined ? 0 : value;
@@ -424,26 +621,48 @@ function sessionCell(pos, gap) {
   return td;
 }
 
-function tableRow(r,hasActual) {
-  const tr=el("tr");tr.append(el("td",{className:"pos",textContent:"P"+r.pred_pos}));
-  const driver=el("td",{className:"driver-cell"});
-  driver.append(driverVisual(r.full_name,r.driver),el("span",{className:"fullname",textContent:r.full_name&&r.full_name!==r.driver?r.full_name:""}));
+function tableRow(r, hasActual, allRows) {
+  const tr = el("tr");
+  tr.append(el("td", { className: "pos", textContent: "P" + r.pred_pos }));
+
+  const swatch = el("span", { className: "swatch" });
+  swatch.style.background = TEAM_COLORS[r.team] || "#999";
+  const driver = el("td", { className: "driver-cell" });
+  const photoUrl = driverPhotoUrl(r.full_name, r.driver);
+  if (photoUrl) {
+    const photo = el("img", { className: "driver-thumb", src: photoUrl, alt: r.full_name || r.driver,
+      loading: "lazy", decoding: "async", referrerPolicy: "no-referrer" });
+    photo.addEventListener("error", () => photo.remove(), { once: true });
+    driver.append(photo);
+  }
+  driver.append(swatch, el("span", { className: "code", textContent: r.driver }),
+    el("span", { className: "fullname", textContent: r.full_name && r.full_name !== r.driver ? r.full_name : "" }));
   tr.append(driver);
-  const team=getTeamInfo(r.team),teamCell=el("td",{className:"team"});
-  teamCell.append(teamVisual(r.team));teamCell.style.color=team.color;tr.append(teamCell);
-  tr.append(sessionCell(r.grid,null));tr.append(sessionCell(r.quali_pos,r.q_best_gap));
-  tr.append(sessionCell(r.fp1_pos,r.fp1_best_gap));tr.append(sessionCell(r.fp2_pos,r.fp2_best_gap));
-  tr.append(el("td",{textContent:r.exp_pos.toFixed(1)}));tr.append(bar(r["win_%"],true));
-  tr.append(bar(r["podium_%"],false));tr.append(bar(r["top10_%"],false));
-  if(hasActual){
-    const td=el("td",{className:"actual-col"});
-    if(r.finish){
-      td.append(document.createTextNode("P"+Math.round(r.finish)+" "));
-      const diff=Math.round(r.pred_pos-r.finish);
-      td.title=diff===0?"Prediction matched the actual finishing position":diff>0?
-        "Finished "+diff+" place"+(diff===1?"":"s")+" ahead of the prediction":
-        "Finished "+Math.abs(diff)+" place"+(diff===-1?"":"s")+" behind the prediction";
-      if(diff!==0)td.append(el("span",{className:diff>0?"up":"down",textContent:(diff>0?"\u25b2":"\u25bc")+Math.abs(Math.round(diff))}));
+  tr.append(el("td", { className: "team", textContent: r.team }));
+
+  tr.append(sessionCell(r.grid, null));
+
+  tr.append(sessionCell(sessionPosition(r, { position: "quali_pos", gap: "q_best_gap" }, allRows), r.q_best_gap));
+  tr.append(sessionCell(sessionPosition(r, { position: "fp1_pos", gap: "fp1_best_gap" }, allRows), r.fp1_best_gap));
+  tr.append(sessionCell(sessionPosition(r, { position: "fp2_pos", gap: "fp2_best_gap" }, allRows), r.fp2_best_gap));
+
+  tr.append(el("td", { textContent: r.exp_pos.toFixed(1) }));
+  tr.append(bar(r["win_%"], true));
+  tr.append(bar(r["podium_%"], false));
+  tr.append(bar(r["top10_%"], false));
+
+  if (hasActual) {
+    const td = el("td", { className: "actual-col" });
+    if (r.finish) {
+      td.append(document.createTextNode("P" + Math.round(r.finish) + " "));
+      const diff = Math.round(r.pred_pos - r.finish);
+      td.title = diff === 0 ? "Prediction matched the actual finishing position" :
+        diff > 0 ? `Finished ${diff} place${diff === 1 ? "" : "s"} ahead of the prediction` :
+        `Finished ${Math.abs(diff)} place${diff === -1 ? "" : "s"} behind the prediction`;
+      if (diff !== 0) {
+        td.append(el("span", { className: diff > 0 ? "up" : "down",
+          textContent: (diff > 0 ? "\u25b2" : "\u25bc") + Math.abs(Math.round(diff)) }));
+      }
     }
     tr.append(td);
   }

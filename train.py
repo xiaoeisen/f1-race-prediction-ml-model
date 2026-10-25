@@ -23,14 +23,14 @@ import pandas as pd
 from circuits import unmatched
 from features import (FEATURES, FEATURES_PRE, LATE_PRACTICE_COLS, PL_FEATURES, PL_FEATURES_PRE,
                       add_features, weekend_practice)
-from metrics import evaluate
-from model import RankEnsemble
+from metrics import evaluate, probability_metrics, race_outcome_probabilities
+from model import FULL_GRID_PRIOR_WEIGHT, RankEnsemble
 
 MODELS = Path("models")
 STAGE_FEATURES = {"full": FEATURES, "pre": FEATURES_PRE}
 STAGE_FILES = {"full": ("ranker.joblib", "ranker_holdout.joblib"),
                "pre": ("ranker_pre.joblib", "ranker_pre_holdout.joblib")}
-GATE_MARGIN = 0.02   # new model's Spearman may be at most this far below "finish = grid"
+GATE_MARGIN = 0.02   # tolerate at most a 2-point drop against the grid on Spearman or top-five overlap
 KEEP_ARCHIVES = 5
 TRAINING_LOG = Path("data") / "training_log.jsonl"
 
@@ -39,31 +39,43 @@ def fit_ranker(train, stage, weight_col=None):
     """Ensemble for one stage: 'full' (after qualifying) or 'pre' (practice only, no grid prior)."""
     full = stage == "full"
     return RankEnsemble(FEATURES if full else FEATURES_PRE, PL_FEATURES if full else PL_FEATURES_PRE,
-                        prior_weight=1.0 if full else 0.0).fit(train, weight_col)
+                        prior_weight=FULL_GRID_PRIOR_WEIGHT if full else 0.0).fit(train, weight_col)
 
 
-def calibrate_temperature(items):
-    """Pick T so softmax(score/T) gives honest win/podium odds. items = (scores, finishing rank) of races
-    the model did NOT train on; minimises the Plackett-Luce loss of the real top 3 (pooled over seasons)."""
+def calibrate_temperature(items, n_sims=2048):
+    """Choose temperature by held-out win + podium Brier score.
+
+    Items are (scores, finishing positions[, per-driver retirement risk]) from races
+    the model did not train on. Legacy two-item records use a 14% risk.
+    """
     prepared = []
-    for scores, finish in items:
-        order = np.argsort(finish, kind="stable")
-        prepared.append((scores, order, min(3, len(order))))
-    best_t, best_nll = 1.5, np.inf
+    for item in items:
+        scores, finish = item[:2]
+        p_out = item[2] if len(item) > 2 else np.full(len(scores), 0.14)
+        prepared.append((np.asarray(scores, float), np.asarray(finish, float),
+                         np.asarray(p_out, float)))
+    if not prepared:
+        return 1.5
+    best_t, best_loss = 1.5, np.inf
     for t in np.linspace(0.3, 4.0, 38):
-        nll = 0.0
-        for scores, order, k in prepared:
-            z = scores[order] / t
-            m = z.max()
-            for i in range(k):
-                nll -= z[i] - (np.log(np.exp(z[i:] - m).sum()) + m)
-        if nll < best_nll:
-            best_t, best_nll = t, nll
+        losses = []
+        for i, (scores, finish, p_out) in enumerate(prepared):
+            probs = race_outcome_probabilities(scores, p_out, t, n_sims, seed=1000 + i)
+            win = probability_metrics(probs["win"], finish, 1)["brier"]
+            podium = probability_metrics(probs["podium"], finish, 3)["brier"]
+            losses.append(win + podium)
+        loss = float(np.mean(losses))
+        if loss < best_loss:
+            best_t, best_loss = t, loss
     return float(best_t)
 
 
 def items_from_df(df, score_col):
-    return [(g[score_col].to_numpy(float), g["finish"].to_numpy(float)) for _, g in df.groupby("race_id")]
+    items = []
+    for _, g in df.groupby("race_id"):
+        p_out = (g["drv_inc_l20"].fillna(0.06) + g["team_mech_l10"].fillna(0.08)).clip(0.03, 0.35)
+        items.append((g[score_col].to_numpy(float), g["finish"].to_numpy(float), p_out.to_numpy(float)))
+    return items
 
 
 def fold_items(al, stage, test_year, n_folds=3):
@@ -72,12 +84,16 @@ def fold_items(al, stage, test_year, n_folds=3):
     items = []
     for y in sorted(al["year"].unique()):
         if test_year - n_folds <= y < test_year and (al["year"] < y).any() and al.loc[al["year"] < y, "race_id"].nunique() >= 10:
-            tr, te = al[al["year"] < y], al[al["year"] == y].copy()
+            tr = al[al["year"] < y]
+            season = al[al["year"] == y]
+            # The pre-quali model is validated on the FP1-only copy, with FP2/FP3
+            # fields blanked just as they are for a live early-weekend prediction.
+            te = season[season["is_aug"]].copy() if stage == "pre" else season[~season["is_aug"]].copy()
             full = stage == "full"
             m = RankEnsemble(FEATURES if full else FEATURES_PRE, PL_FEATURES if full else PL_FEATURES_PRE,
-                             prior_weight=1.0 if full else 0.0, seeds=(1,)).fit(tr, "w")
+                             prior_weight=FULL_GRID_PRIOR_WEIGHT if full else 0.0, seeds=(1,)).fit(tr, "w")
             te["s"] = m.predict(te)
-            items += items_from_df(te[te["race_id"] < 10 ** 6], "s")
+            items += items_from_df(te, "s")
     return items
 
 
@@ -87,14 +103,18 @@ def _prep(raw, train_from=None):
     return df[df["year"] >= train_from].reset_index(drop=True) if train_from else df
 
 
-def _add_weights(df, order, race_weights, use_weights):
-    """Recency (older races count a bit less) x emphasis on races the live model got wrong."""
+def _add_weights(df, order, race_weights, use_weights, primary_year=None):
+    """Prioritize the current regulation season; retain prior seasons as weaker context."""
     if not use_weights:
         df["w"] = 1.0
         return df
-    rec = dict(zip(order, np.linspace(0.6, 1.0, len(order)) if len(order) > 1 else [1.0]))
+    primary_year = int(primary_year if primary_year is not None else df["year"].max())
+    season_weight = {int(y): (1.0 if int(y) == primary_year else
+                              0.30 if int(y) == primary_year - 1 else 0.05)
+                     for y in df["year"].unique()}
     live = race_weights or {}
-    df["w"] = [rec.get((y, r), 1.0) * live.get((y, r), 1.0) for y, r in zip(df["year"], df["round"])]
+    df["w"] = [season_weight.get(int(y), 0.05) * live.get((int(y), int(r)), 1.0)
+                for y, r in zip(df["year"], df["round"])]
     return df
 
 
@@ -142,10 +162,13 @@ def train_models(raw, test_year=None, train_from=None, race_weights=None, live_i
     if df.empty:
         raise ValueError("No finished races to train on.")
     order = sorted({(int(y), int(r)) for y, r in zip(df["year"], df["round"])})
-    df = _add_weights(df, order, race_weights, use_weights)
+    df = _add_weights(df, order, race_weights, use_weights,
+                      primary_year=test_year if test_year is not None else max(y for y, _ in order))
 
     # "right after FP1" copy of the data: practice 2/3 blanked, only the practice columns rebuilt
     aug = df.copy()
+    df["is_aug"] = False
+    aug["is_aug"] = True
     for c in LATE_PRACTICE_COLS:
         if c in aug:
             aug[c] = np.nan
@@ -174,14 +197,15 @@ def train_models(raw, test_year=None, train_from=None, race_weights=None, live_i
     for stage, feats in STAGE_FEATURES.items():
         tr = train if stage == "full" else pd.concat([train, aug_train], ignore_index=True)
         al = df if stage == "full" else pd.concat([df, aug], ignore_index=True)
+        stage_test = test.copy() if stage == "full" else aug.loc[is_aug_test].copy()
         hold = fit_ranker(tr, stage, "w")
-        test[f"score_{stage}"] = hold.predict(test)
+        stage_test[f"score_{stage}"] = hold.predict(stage_test)
         tables[stage] = pd.DataFrame({
-            "grid order (baseline)": evaluate(test.assign(g=-test["grid"].fillna(21)), "g"),
-            "driver+team Elo": evaluate(test.assign(e=test["drv_elo"] + test["team_elo"]), "e"),
-            "LightGBM ranker": evaluate(test, f"score_{stage}")}).round(3)
+            "grid order (baseline)": evaluate(stage_test.assign(g=-stage_test["grid"].fillna(21)), "g"),
+            "driver+team Elo": evaluate(stage_test.assign(e=stage_test["drv_elo"] + stage_test["team_elo"]), "e"),
+            "LightGBM ranker": evaluate(stage_test, f"score_{stage}")}).round(3)
         al_stage = df if stage == "full" else pd.concat([df, aug], ignore_index=True)
-        temps[stage] = calibrate_temperature(items_from_df(test, f"score_{stage}")
+        temps[stage] = calibrate_temperature(items_from_df(stage_test, f"score_{stage}")
                                              + fold_items(al_stage, stage, test_year) + live_items.get(stage, []))
         imps[stage] = hold.feature_importance()
         holdouts[stage] = {"model": hold, "features": feats, "temperature": temps[stage], "stage": stage,
@@ -191,12 +215,14 @@ def train_models(raw, test_year=None, train_from=None, race_weights=None, live_i
 
     t = tables["full"]
     ranker_sp, grid_sp = float(t.loc["spearman", "LightGBM ranker"]), float(t.loc["spearman", "grid order (baseline)"])
+    ranker_top5, grid_top5 = float(t.loc["top5", "LightGBM ranker"]), float(t.loc["top5", "grid order (baseline)"])
     first = not (MODELS / STAGE_FILES["full"][0]).exists()
-    passed = bool(ranker_sp >= grid_sp - GATE_MARGIN)
+    passed = bool(ranker_sp >= grid_sp - GATE_MARGIN and ranker_top5 >= grid_top5 - GATE_MARGIN)
     promoted = first or passed
+    detail = f"Spearman {ranker_sp:.3f}/{grid_sp:.3f}, top-five {ranker_top5:.3f}/{grid_top5:.3f} (model/grid)"
     reason_txt = ("first model" if first else
-                  f"passed (Spearman {ranker_sp:.3f} vs grid {grid_sp:.3f})" if passed else
-                  f"REJECTED, kept the previous model (Spearman {ranker_sp:.3f} vs grid {grid_sp:.3f})")
+                  f"passed ({detail})" if passed else
+                  f"REJECTED, kept the previous model ({detail})")
 
     version = _version().get("version", 0)
     if promoted:
