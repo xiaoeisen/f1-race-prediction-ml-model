@@ -215,7 +215,10 @@ def schedule(year):
         try:
             s = fastf1.get_event_schedule(year, include_testing=False)
         except Exception:
-            raise HTTPException(502, "Could not load the race calendar right now.")
+            try:
+                s = autopilot.default_schedule(year)
+            except Exception:
+                raise HTTPException(502, "Could not load the race calendar from FastF1 or stored race data.")
         _sched[year] = s.set_index("RoundNumber")
     return _sched[year]
 

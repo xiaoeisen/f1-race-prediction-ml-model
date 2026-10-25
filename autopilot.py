@@ -57,6 +57,10 @@ def utcnow():
 def sessions_of(ev):
     """{key: (start, estimated end)} in naive UTC, from a FastF1 schedule row."""
     out = {}
+    if ev.get("CalendarSource") == "history":
+        day = pd.Timestamp(ev["EventDate"]).normalize().tz_localize("UTC")
+        start = day + pd.Timedelta(hours=12)  # date-only fallback marker, not an official start time
+        return {"race": (start.tz_localize(None), (start + pd.Timedelta(minutes=DURATION_MIN["race"])).tz_localize(None))}
     for i in range(1, 6):
         name, start = ev.get(f"Session{i}"), ev.get(f"Session{i}DateUtc")
         key = SESSION_KEYS.get(name)
@@ -125,7 +129,43 @@ def _model(stage):
 
 def default_schedule(year):
     import fastf1
-    return fastf1.get_event_schedule(year, include_testing=False)
+    try:
+        return fastf1.get_event_schedule(year, include_testing=False)
+    except Exception:
+        # Keep the calendar and Race Center usable when FastF1's schedule feed
+        # is offline. The stored race data contains dates and names for races
+        # already collected; it does not contain exact session start times.
+        if not HIST.exists():
+            raise
+        hist = pd.read_csv(HIST)
+        hist = hist[pd.to_numeric(hist["year"], errors="coerce") == int(year)]
+        if hist.empty or not {"round", "event", "date"}.issubset(hist.columns):
+            raise
+        rows = []
+        for rnd, group in hist.groupby("round", sort=True):
+            event_date = pd.to_datetime(group["date"], errors="coerce").dropna()
+            if event_date.empty:
+                continue
+            event_format = "sprint" if (
+                "is_sprint" in group and pd.to_numeric(group["is_sprint"], errors="coerce").fillna(0).max() > 0
+            ) else "conventional"
+            race_date = pd.Timestamp(event_date.iloc[0]).normalize()
+            rows.append({
+                "RoundNumber": int(rnd),
+                "EventName": str(group["event"].dropna().iloc[0]),
+                "Location": str(group["circuit"].dropna().iloc[0]) if "circuit" in group and group["circuit"].notna().any() else "",
+                "Country": "",
+                "EventDate": race_date,
+                "EventFormat": event_format,
+                "Session5": "Race",
+                # Date-only local history cannot recover the official start time.
+                # Noon UTC is only a marker for sorting/status and is labelled approximate in the UI.
+                "Session5DateUtc": race_date.tz_localize("UTC") + pd.Timedelta(hours=12),
+                "CalendarSource": "history",
+            })
+        if not rows:
+            raise
+        return pd.DataFrame(rows)
 
 
 def default_weekend(year, rnd, ev, force):
@@ -357,7 +397,8 @@ def live_payload(ap, year=None, rnd=None):
                 pass
     return dict(
         now=_iso(now),
-        event=dict(year=e["year"], round=e["round"], name=e["name"], race_start=_iso(e["race"]), status=status, sessions=sess),
+        event=dict(year=e["year"], round=e["round"], name=e["name"], race_start=_iso(e["race"]), status=status,
+                   schedule_estimated=e["ev"].get("CalendarSource") == "history", sessions=sess),
         predictions=mine, actual=actual,
         season=predlog.summary(entries),
         races=[dict(year=x["year"], round=x["round"], name=x["name"]) for x in events if x["year"] == now.year],

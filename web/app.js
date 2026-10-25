@@ -754,7 +754,10 @@ function renderLive(d) {
     race_started: "Race in progress. Predictions are locked; the real result and accuracy appear when it finishes.",
     finished: "Finished. Real result, accuracy and self-training are below.",
   }[ev.status] || "";
-  $("live-sub").textContent = `Race start ${new Date(ev.race_start).toLocaleString()}. ${statusText}`;
+  const raceDate = new Date(ev.race_start);
+  $("live-sub").textContent = ev.schedule_estimated
+    ? `Race date ${raceDate.toLocaleDateString()}. Exact session times are unavailable offline. ${statusText}`
+    : `Race start ${raceDate.toLocaleString()}. ${statusText}`;
 
   const pick = $("live-race");
   const want = `${ev.year}-${ev.round}`;
@@ -763,8 +766,9 @@ function renderLive(d) {
   pick.value = want;
 
   $("live-sessions").replaceChildren(...ev.sessions.map((s) => el("span", {
-    className: "chip" + (s.done ? " done" : ""), title: new Date(s.start).toLocaleString(),
-    textContent: (s.done ? "\u2713 " : "") + s.label })));
+    className: "chip" + (s.done ? " done" : ""),
+    title: ev.schedule_estimated ? "Exact session time unavailable offline" : new Date(s.start).toLocaleString(),
+    textContent: (s.done ? "\u2713 " : "") + (ev.schedule_estimated ? "Race day" : s.label) })));
 
   // --- predicted top 5 next to the real result
   const stages = STAGES.filter(([k]) => d.predictions[k]);
