@@ -1,0 +1,4 @@
+# extra packages for running the tests:  pip install -r test-requirements.txt
+-r runtime-requirements.txt
+pytest
+httpx2   # used by FastAPI's TestClient (older FastAPI versions use plain httpx)
